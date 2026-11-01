@@ -59,11 +59,21 @@
     ];
 
     function App() {
-      // ユーザー情報（デフォルト名）
+      // ユーザーIDの保持・生成
+      const [userId] = useState(() => {
+        let savedId = localStorage.getItem('community_user_id');
+        if (!savedId) {
+          savedId = 'user_' + Date.now();
+          localStorage.setItem('community_user_id', savedId);
+        }
+        return savedId;
+      });
+
+      // ユーザー情報
       const [currentUser, setCurrentUser] = useState(() => {
         const savedName = localStorage.getItem('community_user_name');
         return {
-          id: 'user_' + (localStorage.getItem('community_user_id') || Date.now()),
+          id: localStorage.getItem('community_user_id') || ('user_' + Date.now()),
           name: savedName || 'ゲストメンバー',
           isAdmin: false
         };
@@ -88,18 +98,11 @@
       const [inputPassword, setInputPassword] = useState('');
       const [passwordError, setPasswordError] = useState(false);
 
-      // ★ 名前変更モーダル
+      // 名前変更モーダル
       const [showNameModal, setShowNameModal] = useState(false);
       const [editNameInput, setEditNameInput] = useState('');
 
       const messagesEndRef = useRef(null);
-
-      // 初期IDの保持
-      useEffect(() => {
-        if (!localStorage.getItem('community_user_id')) {
-          localStorage.setItem('community_user_id', currentUser.id.replace('user_', ''));
-        }
-      }, []);
 
       // ローカルストレージ読込
       useEffect(() => {
@@ -125,13 +128,11 @@
         localStorage.setItem('community_user_name', currentUser.name);
       }, [currentUser.name]);
 
-      // 名前変更モーダルを開く
       function handleOpenNameModal() {
         setEditNameInput(currentUser.name);
         setShowNameModal(true);
       }
 
-      // 名前保存処理
       function handleSaveName(e) {
         e.preventDefault();
         const trimmed = editNameInput.trim();
@@ -149,7 +150,7 @@
       function handleToggleAdmin() {
         if (currentUser.isAdmin) {
           const savedName = localStorage.getItem('community_user_name') || 'ゲストメンバー';
-          setCurrentUser({ ...currentUser, name: savedName, isAdmin: false });
+          setCurrentUser({ id: userId, name: savedName, isAdmin: false });
         } else {
           setInputPassword('');
           setPasswordError(false);
@@ -215,12 +216,12 @@
         }
       }
 
+      // ★ メッセージ削除処理（自分 または 管理者）
       function handleDeleteMessage(msgId) {
-        if (!currentUser.isAdmin) return;
-        if (confirm('このメッセージを削除しますか？（管理者権限）')) {
+        if (confirm('このメッセージを削除しますか？')) {
           setMessages(prev => ({
             ...prev,
-            [activeChannelId]: prev[activeChannelId].filter(m => m.id !== msgId)
+            [activeChannelId]: (prev[activeChannelId] || []).filter(m => m.id !== msgId)
           }));
         }
       }
@@ -315,7 +316,7 @@
               ))}
             </div>
 
-            {/* 下部 自分のユーザー情報 & 名前変更ボタン */}
+            {/* ユーザープロフィール・名前変更 */}
             <div className="p-3 border-t border-borderSoft bg-bgMain flex items-center justify-between">
               <div className="flex items-center gap-2 overflow-hidden">
                 <div className="w-7 h-7 rounded-full bg-accent text-white flex items-center justify-center font-bold text-xs shrink-0">
@@ -348,44 +349,80 @@
               </div>
             </header>
 
+            {/* チャットタイムライン（右：自分 / 左：相手） */}
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
               {currentChannelMessages.map(msg => {
+                const isMe = msg.userId === currentUser.id;
+                const canDelete = isMe || currentUser.isAdmin;
                 const msgReactions = reactions[msg.id] || {};
 
                 return (
-                  <div key={msg.id} className="flex gap-3 group items-start">
+                  <div
+                    key={msg.id}
+                    className={`flex gap-2.5 items-start group ${isMe ? 'flex-row-reverse' : 'flex-row'}`}
+                  >
+                    {/* アイコン */}
                     <div
                       onClick={() => setViewingProfile(msg)}
-                      className="w-8 h-8 rounded-full bg-badgeBg border border-borderSoft flex items-center justify-center font-bold text-xs text-accentBlue shrink-0 cursor-pointer hover:border-accentBlue"
+                      className={`w-8 h-8 rounded-full border flex items-center justify-center font-bold text-xs shrink-0 cursor-pointer ${
+                        isMe ? 'bg-accent text-white border-accent' : 'bg-badgeBg text-accentBlue border-borderSoft'
+                      }`}
                     >
                       {msg.userName.substring(0, 1)}
                     </div>
 
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-0.5">
-                        <span className="text-xs font-bold text-textMain cursor-pointer hover:underline" onClick={() => setViewingProfile(msg)}>
+                    {/* 吹き出し領域 */}
+                    <div className={`flex flex-col max-w-[80%] sm:max-w-md ${isMe ? 'items-end' : 'items-start'}`}>
+                      {/* 投稿者名＆時刻 */}
+                      <div className={`flex items-center gap-1.5 mb-1 text-[10px] text-textSub ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
+                        <span className="font-bold text-textMain cursor-pointer hover:underline" onClick={() => setViewingProfile(msg)}>
                           {msg.userName}
                         </span>
-                        {msg.isAdmin && <span className="bg-black text-white text-[9px] px-1.5 py-0.5 rounded font-bold">👑 管理者</span>}
-                        <span className="text-[10px] text-textSub">{msg.timestamp}</span>
+                        {msg.isAdmin && <span className="bg-black text-white text-[8px] px-1 py-0.2 rounded font-bold">👑 管理者</span>}
+                        <span>{msg.timestamp}</span>
                       </div>
 
-                      <div className="inline-block bg-cardBg border border-borderSoft p-3 rounded-2xl rounded-tl-none text-xs text-textMain leading-relaxed shadow-sm break-words max-w-xl">
+                      {/* 本文吹き出し */}
+                      <div
+                        className={`p-3 text-xs leading-relaxed break-words shadow-xs ${
+                          isMe
+                            ? 'bg-accent text-white rounded-2xl rounded-tr-none'
+                            : 'bg-cardBg text-textMain border border-borderSoft rounded-2xl rounded-tl-none'
+                        }`}
+                      >
                         {msg.content}
                       </div>
 
-                      <div className="flex items-center gap-2 mt-1">
-                        <button onClick={() => handleReaction(msg.id, '👍')} className="text-[10px] border border-borderSoft bg-cardBg px-2 py-0.5 rounded-full hover:bg-bgMain">
+                      {/* リアクション ＆ 返信 ＆ 削除ボタン */}
+                      <div className={`flex items-center gap-1.5 mt-1.5 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
+                        <button
+                          onClick={() => handleReaction(msg.id, '👍')}
+                          className="text-[10px] border border-borderSoft bg-cardBg px-2 py-0.5 rounded-full hover:bg-bgMain text-textMain"
+                        >
                           👍 {msgReactions['👍'] || 0}
                         </button>
-                        <button onClick={() => handleReaction(msg.id, '❤️')} className="text-[10px] border border-borderSoft bg-cardBg px-2 py-0.5 rounded-full hover:bg-bgMain">
+                        <button
+                          onClick={() => handleReaction(msg.id, '❤️')}
+                          className="text-[10px] border border-borderSoft bg-cardBg px-2 py-0.5 rounded-full hover:bg-bgMain text-textMain"
+                        >
                           ❤️ {msgReactions['❤️'] || 0}
                         </button>
-                        <button onClick={() => setInputText(`@${msg.userName} `)} className="text-[10px] text-textSub hover:text-textMain font-bold">
-                          返信
-                        </button>
-                        {currentUser.isAdmin && (
-                          <button onClick={() => handleDeleteMessage(msg.id)} className="opacity-0 group-hover:opacity-100 text-[10px] text-red-500 font-bold ml-2">
+
+                        {!isMe && (
+                          <button
+                            onClick={() => setInputText(`@${msg.userName} `)}
+                            className="text-[10px] text-textSub hover:text-textMain font-bold ml-1"
+                          >
+                            返信
+                          </button>
+                        )}
+
+                        {/* 削除ボタン（自分 または 管理者） */}
+                        {canDelete && (
+                          <button
+                            onClick={() => handleDeleteMessage(msg.id)}
+                            className="opacity-0 group-hover:opacity-100 transition text-[10px] text-red-500 hover:underline font-bold px-1"
+                          >
                             削除
                           </button>
                         )}
@@ -397,6 +434,7 @@
               <div ref={messagesEndRef} />
             </div>
 
+            {/* 送信フォーム */}
             <form onSubmit={handleSendMessage} className="p-3 bg-cardBg border-t border-borderSoft flex gap-2 items-center">
               <input
                 type="text"
@@ -415,7 +453,7 @@
             </form>
           </main>
 
-          {/* ★ 名前変更モーダル */}
+          {/* 名前変更モーダル */}
           {showNameModal && (
             <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
               <form onSubmit={handleSaveName} className="bg-cardBg w-full max-w-xs rounded-2xl p-4 shadow-xl border border-borderSoft space-y-3">
