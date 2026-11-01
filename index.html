@@ -59,8 +59,16 @@
     ];
 
     function App() {
-      // 初期状態は一般ユーザー（isAdmin: false）
-      const [currentUser, setCurrentUser] = useState({ id: 'user_' + Date.now(), name: 'ゲストメンバー', isAdmin: false });
+      // ユーザー情報（デフォルト名）
+      const [currentUser, setCurrentUser] = useState(() => {
+        const savedName = localStorage.getItem('community_user_name');
+        return {
+          id: 'user_' + (localStorage.getItem('community_user_id') || Date.now()),
+          name: savedName || 'ゲストメンバー',
+          isAdmin: false
+        };
+      });
+
       const [channels, setChannels] = useState(DEFAULT_CHANNELS);
       const [activeChannelId, setActiveChannelId] = useState('general');
       const [messages, setMessages] = useState({});
@@ -75,12 +83,23 @@
       const [newChannelName, setNewChannelName] = useState('');
       const [isAddingChannel, setIsAddingChannel] = useState(false);
       
-      // パスワード入力ダイアログ
+      // 管理者認証モーダル
       const [showPasswordModal, setShowPasswordModal] = useState(false);
       const [inputPassword, setInputPassword] = useState('');
       const [passwordError, setPasswordError] = useState(false);
 
+      // ★ 名前変更モーダル
+      const [showNameModal, setShowNameModal] = useState(false);
+      const [editNameInput, setEditNameInput] = useState('');
+
       const messagesEndRef = useRef(null);
+
+      // 初期IDの保持
+      useEffect(() => {
+        if (!localStorage.getItem('community_user_id')) {
+          localStorage.setItem('community_user_id', currentUser.id.replace('user_', ''));
+        }
+      }, []);
 
       // ローカルストレージ読込
       useEffect(() => {
@@ -101,19 +120,37 @@
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
       }, [messages]);
 
-      // メンション通知を表示する関数（アプリ内バナー）
+      // ユーザー名の保存
+      useEffect(() => {
+        localStorage.setItem('community_user_name', currentUser.name);
+      }, [currentUser.name]);
+
+      // 名前変更モーダルを開く
+      function handleOpenNameModal() {
+        setEditNameInput(currentUser.name);
+        setShowNameModal(true);
+      }
+
+      // 名前保存処理
+      function handleSaveName(e) {
+        e.preventDefault();
+        const trimmed = editNameInput.trim();
+        if (!trimmed) return;
+
+        setCurrentUser(prev => ({ ...prev, name: trimmed }));
+        setShowNameModal(false);
+      }
+
       function triggerMentionNotification(senderName, text) {
         setNotification({ sender: senderName, text: text });
         setTimeout(() => setNotification(null), 4000);
       }
 
-      // 管理者切り替え処理
       function handleToggleAdmin() {
         if (currentUser.isAdmin) {
-          // 管理者から一般ユーザーに戻る
-          setCurrentUser({ ...currentUser, name: 'ゲストメンバー', isAdmin: false });
+          const savedName = localStorage.getItem('community_user_name') || 'ゲストメンバー';
+          setCurrentUser({ ...currentUser, name: savedName, isAdmin: false });
         } else {
-          // パスワード入力モーダルを開く
           setInputPassword('');
           setPasswordError(false);
           setShowPasswordModal(true);
@@ -211,7 +248,7 @@
       return (
         <div className="flex h-full relative">
           
-          {/* ★ アプリ内メンション通知バナー */}
+          {/* 通知バナー */}
           {notification && (
             <div className="absolute top-3 left-1/2 -translate-x-1/2 bg-accent text-white px-4 py-2.5 rounded-full shadow-lg z-50 flex items-center gap-2 text-xs font-bold animate-bounce">
               <span className="bg-blue-500 text-white w-5 h-5 rounded-full flex items-center justify-center text-[10px]">🔔</span>
@@ -231,7 +268,6 @@
                 <h1 className="font-bold text-sm text-textMain tracking-tight">note コミュニティ</h1>
                 <p className="text-[10px] text-textSub">ステータス: {currentUser.isAdmin ? '👑 管理者' : '👤 一般メンバー'}</p>
               </div>
-              {/* パスワード保護付き 管理者切り替えボタン */}
               <button
                 onClick={handleToggleAdmin}
                 className={`text-[9px] px-2 py-1 border rounded font-bold transition ${currentUser.isAdmin ? 'bg-black text-white border-black' : 'bg-bgMain border-borderSoft text-textSub hover:text-textMain'}`}
@@ -279,8 +315,9 @@
               ))}
             </div>
 
-            <div className="p-3 border-t border-borderSoft bg-bgMain">
-              <div className="flex items-center gap-2">
+            {/* 下部 自分のユーザー情報 & 名前変更ボタン */}
+            <div className="p-3 border-t border-borderSoft bg-bgMain flex items-center justify-between">
+              <div className="flex items-center gap-2 overflow-hidden">
                 <div className="w-7 h-7 rounded-full bg-accent text-white flex items-center justify-center font-bold text-xs shrink-0">
                   {currentUser.name.substring(0, 1)}
                 </div>
@@ -289,12 +326,18 @@
                   <p className="text-[9px] text-textSub">{currentUser.isAdmin ? '👑 管理者' : '一般メンバー'}</p>
                 </div>
               </div>
+              <button
+                onClick={handleOpenNameModal}
+                title="名前を変更"
+                className="text-xs p-1.5 hover:bg-cardBg rounded-lg border border-transparent hover:border-borderSoft text-textSub hover:text-textMain transition shrink-0 font-bold"
+              >
+                ✏️
+              </button>
             </div>
           </aside>
 
           {/* ② 中央 メインチャット画面 */}
           <main className="flex-1 flex flex-col h-full bg-bgMain">
-            {/* ヘッダー */}
             <header className="bg-cardBg border-b border-borderSoft px-4 py-3 flex items-center justify-between sticky top-0 z-10">
               <div className="flex items-center gap-3">
                 <button onClick={() => setIsSidebarOpen(true)} className="md:hidden text-lg font-bold text-textSub p-1">☰</button>
@@ -305,7 +348,6 @@
               </div>
             </header>
 
-            {/* メッセージ表示スペース */}
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
               {currentChannelMessages.map(msg => {
                 const msgReactions = reactions[msg.id] || {};
@@ -332,7 +374,6 @@
                         {msg.content}
                       </div>
 
-                      {/* リアクション ＆ 管理者削除ボタン */}
                       <div className="flex items-center gap-2 mt-1">
                         <button onClick={() => handleReaction(msg.id, '👍')} className="text-[10px] border border-borderSoft bg-cardBg px-2 py-0.5 rounded-full hover:bg-bgMain">
                           👍 {msgReactions['👍'] || 0}
@@ -356,7 +397,6 @@
               <div ref={messagesEndRef} />
             </div>
 
-            {/* 入力フォーム */}
             <form onSubmit={handleSendMessage} className="p-3 bg-cardBg border-t border-borderSoft flex gap-2 items-center">
               <input
                 type="text"
@@ -375,7 +415,46 @@
             </form>
           </main>
 
-          {/* ③ 管理者パスワード入力モーダル */}
+          {/* ★ 名前変更モーダル */}
+          {showNameModal && (
+            <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+              <form onSubmit={handleSaveName} className="bg-cardBg w-full max-w-xs rounded-2xl p-4 shadow-xl border border-borderSoft space-y-3">
+                <div className="flex justify-between items-center border-b border-borderSoft pb-2">
+                  <span className="text-xs font-bold text-textMain">✏️ 名前の変更</span>
+                  <button type="button" onClick={() => setShowNameModal(false)} className="text-xs font-bold text-textSub">×</button>
+                </div>
+                <p className="text-[11px] text-textSub">チャット内で表示されるあなたの名前を入力してください。</p>
+                
+                <input
+                  type="text"
+                  value={editNameInput}
+                  onChange={e => setEditNameInput(e.target.value)}
+                  placeholder="例: たろう / note読者"
+                  maxLength={20}
+                  className="w-full border border-borderSoft p-2 rounded-xl text-xs bg-bgMain focus:outline-none focus:border-accent"
+                  autoFocus
+                />
+
+                <div className="flex gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setShowNameModal(false)}
+                    className="flex-1 py-1.5 text-xs font-bold text-textSub bg-bgMain rounded-xl border border-borderSoft"
+                  >
+                    キャンセル
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex-1 py-1.5 text-xs font-bold text-white bg-accent rounded-xl shadow-sm"
+                  >
+                    保存
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {/* 管理者パスワード入力モーダル */}
           {showPasswordModal && (
             <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
               <form onSubmit={handleVerifyPassword} className="bg-cardBg w-full max-w-xs rounded-2xl p-4 shadow-xl border border-borderSoft space-y-3">
@@ -417,7 +496,7 @@
             </div>
           )}
 
-          {/* ④ ユーザープロフ ＆ BANダイアログ */}
+          {/* ユーザープロフ ＆ BANダイアログ */}
           {viewingProfile && (
             <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
               <div className="bg-cardBg w-full max-w-xs rounded-2xl p-4 shadow-xl border border-borderSoft space-y-3">
@@ -443,7 +522,6 @@
                     @ メンションして返信
                   </button>
 
-                  {/* 管理者専用のBAN（追放）ボタン */}
                   {currentUser.isAdmin && !viewingProfile.isAdmin && (
                     <button
                       onClick={() => handleBanUser(viewingProfile.userId)}
